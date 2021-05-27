@@ -1,0 +1,112 @@
+---
+title: 離岸風電文集(V20)
+author: 中山大學管理學院 卓雍然
+date: "`r Sys.time()`"
+output: 
+  html_document:
+    highlight: pygments
+    theme: flatly
+    css: style.css
+---
+
+```{r results='hide', message=FALSE, warning=FALSE, echo=F}
+rm(list=ls(all=T))
+knitr::opts_chunk$set(comment = NA)
+knitr::opts_knit$set(global.par = TRUE)
+par(cex=0.8)
+options(scipen=20, digits=5, width=80)
+if(!require(pacman)) install.packages("pacman")
+```
+<hr>
+
+```{r results='hide', message=FALSE, warning=FALSE}
+pacman::p_load(dplyr, highcharter, RColorBrewer)
+load("~/R_Workspace/MIRDC/V20/workflow/3_C20/C20.rdata")
+pals16 = c(brewer.pal(12,"Set3"),brewer.pal(8,"Set1")[1:4])
+```
+<hr>
+
+### 1. 文章來源
+```{r fig.height=4, fig.width=7.2, warning=F}
+X$year = as.integer(format(X$date, "%Y"))
+X %>% group_by(source, year) %>% 
+  summarise(no_aritcles = n()) %>% 
+  hchart("column", hcaes(x=year, y=no_aritcles, group=source)) %>% 
+  hc_plotOptions(column = list(stacking = "normal")) %>%
+  hc_add_theme(hc_theme_538()) %>% hc_size(height=400) %>% 
+  hc_colors(hex_to_rgba(c('orange','darkgreen'), alpha = 0.65)) %>%
+  hc_legend(floating=T,align='left',verticalAlign='bottom') %>% 
+  hc_title(text="Number of news articles by Source/Year") %>%
+  hc_subtitle(text="13,601 (4CO:2,443, OSW:11,158) articles in 9 years")
+```
+<br>
+
+### 2. **4C-Offshore:** 文章分類
+```{r}
+X %>% filter(source=="4CO") %>%  group_by(subject, year) %>% 
+  summarise(no_aritcles = n()) %>% 
+  hchart("column", hcaes(x=year, y=no_aritcles, group=subject)) %>% 
+  hc_plotOptions(column = list(stacking = "normal")) %>%
+  hc_add_theme(hc_theme_538()) %>% hc_size(height=400) %>% 
+  hc_title(text="Number of news articles by Subject/Year from 4C-Offshore") %>%
+  hc_subtitle(text="2,443 (offshore:1,611, subsea:169, vessel:663) articles in 7 years")
+```
+<br>
+
+### 3. **Offshore-WIND:** 文章分類
+```{r}
+X1 = X %>% filter(source=="OSW") %>% 
+  mutate(subject = as.character(subject)) %>% 
+  mutate(subject = factor(subject, names(sort(table(subject),dec=T))) )
+
+X1 %>%  group_by(subject, year) %>% 
+  summarise(no_aritcles = n()) %>% 
+  hchart("column", hcaes(x=year, y=no_aritcles, group=subject)) %>% 
+  hc_plotOptions(column = list(stacking = "normal")) %>%
+  hc_add_theme(hc_theme_538()) %>% 
+  hc_size(height=600) %>% hc_colors(pals16) %>% 
+  hc_title(text="Number of news articles by Subject/Year from Offshore-WIND") %>%
+  hc_subtitle(text="11,158 articles in 9 years")
+```
+<br>
+
+### 4. **Offshore-WIND:** 各分類在文集中的比重
+```{r}
+X1 %>% group_by(subject) %>% summarise(no_articles = n()) %>% 
+  hchart("column", hcaes(y=no_articles, group=subject)) %>% 
+  hc_size(height=300) %>% hc_colors(pals16) %>% 
+  hc_legend(align='right',verticalAlign='top',layout="vertical", 
+            floating=T, y=20) %>% 
+  hc_add_theme(hc_theme_538()) %>%
+  hc_title(text="No. articles per Subject") %>%
+  hc_subtitle(text="11,158 articles in 9 years from Offshore-WIND")
+```
+<br>
+
+```{r}
+X1 %>% group_by(subject, year) %>% 
+  summarise(no_aritcles = n()) %>% 
+  hchart("column", hcaes(x=year, y=no_aritcles, group=subject)) %>% 
+  hc_plotOptions(column = list(stacking = "percent")) %>%
+  hc_add_theme(hc_theme_538()) %>% 
+  hc_yAxis(title = list(text = "weight of subject")) %>% 
+  hc_size(height=600) %>% hc_colors(pals16) %>% 
+  hc_title(text="Number of news articles by Subject/Year from Offshore-WIND") %>%
+  hc_subtitle(text="11,158 articles in 9 years")
+```
+<br>
+
+### 5. **Offshore-WIND:** 各分類的趨勢
+```{r}
+X1 %>% group_by(subject, year) %>% 
+  summarise(no_aritcles = n()) %>% 
+  hchart("spline", hcaes(x=year, y=no_aritcles, group=subject)) %>% 
+  hc_add_theme(hc_theme_538()) %>% 
+  hc_size(height=500) %>% hc_colors(pals16) %>% 
+  hc_title(text="No articles by Subject/Year") %>%
+  hc_subtitle(text="11,158 articles in 9 years from Offshore-WIND")
+```
+<br>
+
+<hr><br><br>
+
