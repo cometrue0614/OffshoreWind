@@ -1,0 +1,87 @@
+---
+title: "離岸風電產學官研網路"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: default
+    css: JH.css
+    social: menu
+    source_code: embed 
+    logo: nsysu48.png
+    favicon: nsysu48.png
+runtime: shiny
+---
+
+```{r}
+pacman::p_load(shiny, shinyWidgets, shinythemes, flexdashboard)
+pacman::p_load(dplyr, arules, arulesViz, visNetwork)
+load("rules.rdata")
+```
+
+Column {data-width=25%}
+-------------------------------------
+### Input 
+```{r}
+chooseSliderSkin("Modern")
+sliderInput("S", "Support", 0, 0.001, 0.00015, 0.00005)
+sliderInput("C", "Confidence", 0, 1, 0.5, 0.05)
+sliderInput("L", "Lift", 0, 100, 1, 1)
+
+# Keywords = c("turbine", "blade", "foundation", 
+#                 "monopile", "Jacket", "ROV", "cable", "laying",
+#                 "inspection", "O&M", "drone", "grid",
+#                 "corrosion", "monitor", "CTV", "SOV", "GWO",
+#                 "installation", "sonar", "protection", "seabed",
+#                 "AUV", "training", "underwater", "maritime", "technology",
+#                 "rock", "system", "testing", "survey", "Taiwan", "vessel")
+# 
+# pickerInput("K", "Choose a keyword:",
+#             choices = sort(Keywords), selected = "vessel",
+#             options = list(`live-search` = T, style = "btn-success"))
+
+textInput(
+  inputId = "id1", label = "lhs", value = "vessel")
+tags$br()
+
+textInput(
+  inputId = "id2", label = "rhs")
+tags$br()
+
+```
+
+Column {data-width=75%}
+-------------------------------------
+### visNetwork
+```{r}
+renderVisNetwork({
+  if(nchar(input$id1) != 0){
+    rx = arules::subset(rules, subset =
+           lhs %pin% tolower(input$id1) &
+           support > input$S &
+           confidence > input$C &
+           lift > input$L)
+  } else {
+    rx = arules::subset(rules, subset =
+           rhs %pin% tolower(input$id2) &
+           support > input$S &
+           confidence > input$C &
+           lift > input$L)
+  } 
+  
+  ##### save plot, adjust labels
+  vx = plot(rx, method = "graph", engine = "htmlwidget", shading = "lift")
+  vx$x$nodes$label = as.character(vx$x$nodes$label)
+  vx$x$nodes$label[vx$x$nodes$group == "rule"] = ""
+  
+  ##### then plot it by
+  off = "function () {this.setOptions( { physics: true } );}"
+  visNetwork(vx$x$nodes, vx$x$edges, width = "100%") %>%
+    visEvents(stabilizationIterationsDone = off) %>%
+    visPhysics("forceAtlas2Based") %>%
+    visNodes(font = list(size = 64, face = "arial", bold = T)) %>%
+    visEdges(smooth = T) %>%
+    visOptions(highlightNearest = list(enabled = T, degree = 1)) %>% 
+    visLayout(randomSeed = 14)
+})
+```
+
+
