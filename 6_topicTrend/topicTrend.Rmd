@@ -1,0 +1,117 @@
+---
+title: "主題模型交叉趨勢分析"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: default
+    css: JH.css
+    social: menu
+    source_code: embed
+    logo: nsysu48.png
+    favicon: nsysu48.png
+runtime: shiny
+---
+
+```{r}
+pacman::p_load(shinyWidgets,shinythemes,dplyr,googleVis,reshape2)
+# 讀取C20rdata
+load("~/R_Workspace/MIRDC/V20/workflow/3_C20/C20.rdata")
+# 讀取LDA建模後的doc_topic 與topic_word資料
+load("~/R_Workspace/MIRDC/V20/workflow/4_entityDetection/nn40.rdata")
+# 取出年份
+X$year = format(X$date,"%Y") %>% factor
+
+# 取得產業分析師所命名的topic名稱
+topic_names = c("foundations I","none","cable laying","none","wind turbines","none","O&M","inspection & repair","financing","none","Thirdnoneparty certification","energy issues","ocean data measurements","none","grid","Asia","tender","none","scientific researches","environmental survey","ports","cables","North Americas","Europe","operation safety","integration systems ","none","vessels I","industry","vessels II","Taiwan ","trainings","none","foudation installation","foundations II","Scotland","Ocean Energy","none","USA","none")
+
+# 設定成dataframe後改變col名稱
+doc_topic = doc_topic_distr %>% as.data.frame
+colnames(doc_topic) = topic_names
+# 取除產業分析師沒有命名的部分
+dupl_id = c(-which(duplicated(colnames(doc_topic))),-2)
+doc_topic_clean = doc_topic[,dupl_id]
+
+# 只做OSW這個來源
+# doc_topic_OSW = doc_topic[which(X$source == 'OSW'),]
+# doc_topic_OSW = doc_topic
+# X_OSW = X[which(X$source == 'OSW'),]
+# Docu_OSW = XX$Docu[which(X$source == 'OSW'),]
+
+# Docu = XX$Docu
+# 將源文件到合併主題與文章分佈
+TP_ = merge(X,doc_topic_clean,by='row.names',all.y=TRUE)
+# 只挑選重要的欄位（year與主題名稱）
+TP = TP_ %>% dplyr::select(7:ncol(TP_))
+```
+
+Column {data-width=25%}
+-------------------------------------
+### 
+```{r}
+chooseSliderSkin("Modern")
+h6("觀察各國家、公司、機構在分類新聞之中的主題聲量(或聲量比重)如何隨時間變化")
+prettyRadioButtons(
+  "Class", "關鍵字類別", choices = unique(E$class),
+  selected = "COUNTRY", inline=T, icon=icon("check"), 
+  status="success", animation="jelly")
+prettyRadioButtons(
+  "Sub_Class", "ORG子類別", choices = unique(E$sub_class),
+  selected = NA, inline=T, icon=icon("check"), 
+  status="success", animation="jelly")
+sliderInput("Rank", "類別聲量排名",  1, 40,  c(1,14), 1)
+sliderInput("Year","統計年分",2011,2019,c(2014,2019),1)
+prettyRadioButtons(
+  "Measure", "聲量計算方式", 
+  choices = list("主題總和"=0, "主題比重(%)"=1),
+  selected = 1, inline=F, status="success")
+
+```
+
+Column {data-width=75%}
+-------------------------------------
+### 
+```{r}
+# create a ui interaction:
+uiOutput("dynamic")
+# render the ui:
+output$dynamic <- renderUI({ 
+   htmlOutput("myTable")
+})
+
+# server activity:
+output$myTable <- renderGvis({
+  if (input$Class == 'ORG'){
+    filterd = E$class == input$Class & E$sub_class == input$Sub_Class
+  }
+  else{
+    filterd = E$class == input$Class
+  }
+  n = sum(filterd)
+  eid = which(filterd)[min(n,input$Rank[1]):min(n,input$Rank[2])]
+  df = do.call(rbind, lapply(eid, function(i) {
+  TP[Docu[,i],] %>%
+    melt(id.vars = 'year',variable.name = 'topic',value.name = 'pro') %>% 
+    xtabs(pro~year+topic,.) %>% 
+    as.data.frame.matrix %>% 
+    {cbind(name=E$name[i], year=rownames(.), .)}
+    })) %>%
+    mutate(year = as.integer(as.character(year))) %>% 
+    filter(year >= input$Year[1] & year <= input$Year[2])
+  df$Total = rowSums(df[,3:20])
+
+  if(input$Measure == 1) {
+    df = df %>% group_by(year) %>% 
+      mutate_each(list( ~(./sum(.)) ), -name) %>% 
+      ungroup
+    df[is.na(df)] = 0
+  }
+
+  df$subject = df$name
+  gvisMotionChart(
+    df,idvar = "name",timevar = "year",
+    options=list(width=750, height=580))       
+  })
+
+
+```
+
+
