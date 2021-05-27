@@ -1,0 +1,132 @@
+---
+title: 離岸風電主題比重分析
+output: 
+  flexdashboard::flex_dashboard:
+    theme: default
+    css: JH.css
+    social: menu
+    logo: nsysu48.png
+    favicon: nsysu48.png
+runtime: shiny
+---
+
+```{r}
+pacman::p_load(shiny,shinythemes,flexdashboard,shinyWidgets)
+pacman::p_load(factoextra,FactoMineR,dplyr,stringr)
+load("C10a.rdata")
+load("nn40.rdata")
+# topic_names = c(
+#   "水下基礎 I", "none", "水下技術", "none", "風力機",
+#   "none", "營運維護_海事船舶", "營運維護_海事服務", "資產管理", "none",
+#   "第三方驗證", "能源議題", "海洋資料測量", "none", "電網",
+#   "亞洲", "招標", "none", "科學研究", "環境調查",
+#   "港口", "電纜", "美國 I", "歐洲", "作業安全",
+#   "系統整合", "none", "船舶 I", "產業", "船舶 II",
+#   "台灣", "訓練", "none", "海事工程-施工 I", "海事工程-施工 II",
+#   "蘇格蘭", "海洋能源", "none", "美國 II", "海洋資源")
+# 
+# TGL = list(
+#   Manufacturing = c("水下基礎 I", "風力機", "第三方驗證", "電纜"),
+#   Survey = c("水下技術", "第三方驗證", "海洋資料測量", "環境調查", "作業安全"),
+#   Installation = c("水下基礎 I", "第三方驗證", "港口", "作業安全", "海事工程-施工 I",	"海事工程-施工 II"),
+#   OandM = c("營運維護_海事船舶", "營運維護_海事服務", "第三方驗證", "海洋資料測量", "電網", "港口", "作業安全", "系統整合", "船舶 I", "船舶 II"),
+#   Reginal_Trends = c("亞洲", "美國 I", "歐洲", "台灣", "蘇格蘭", "美國 II"),
+#   Others = c("資產管理", "能源議題", "招標", "產業", "訓練", "海洋能源", "海洋資源")
+#   )
+
+topic_names = c(
+  "foundations I","none","underwater tech","none","wind turbines",
+  "none","O&M_Maritime Vessels","O&M_Maritime Service","Assets Mangements","none",
+  "Third-party certification","energy issues",
+  "ocean data measurements","none","grid","Asia","tender","none",
+  "scientific researches","environmental survey","ports","cables",
+  "USA I", "Europe", "operation safety","system integration",
+  "none","vessels I","industry","vessels II","Taiwan","trainings",
+  "none","maritime engineering-installation I","maritime engineering-installation II","Scotland",
+  "Ocean Energy","none","USA II","Ocean Resources")
+
+TGL = list(
+  Manufacturing = c("foundations I", "wind turbines", "Third-party certification", "cables"),
+  Survey = c("underwater tech", "Third-party certification", "ocean data measurements", "environmental survey", "operation safety"),
+  Installation = c("foundations I", "Third-party certification", "ports", "operation safety", "maritime engineering-installation I",	"maritime engineering-installation II"),
+  OandM = c("O&M_Maritime Vessels", "O&M_Maritime Service", "Third-party certification", "ocean data measurements", "grid", "ports", "operation safety", "system integration", "vessels I", "vessels II"),
+  Reginal_Trends = c("Asia", "USA I", "Europe", "Taiwan", "Scotland", "USA II"),
+  Others = c("Assets Mangements", "energy issues", "tender", "industry", "trainings", "Ocean Energy", "Ocean Resources")
+  )
+
+
+mx = doc_topic_distr
+# setdiff(1:13601, rownames(mx)) # 6132 6133
+mx = mx[order(as.integer(rownames(mx))) ,]
+v = matrix(rep(0,80),2,40,T,list(6132:6133, NULL))
+mx = rbind(mx[1:6131,],v) %>% rbind(mx[6132:nrow(mx),])
+colnames(mx) = topic_names
+mx = mx[, colnames(mx)!="none"]
+# dim(mx); sum(rownames(mx) == 1:13601)
+```
+
+
+關鍵字與主題類別  {data-icon="fa-cogs"}
+===============================================================
+Inputs {.sidebar}
+-------------------------------------
+```{r}
+chooseSliderSkin("Modern")
+h6("將關鍵字投射到主題(縮減)空間，藉以比較各國家、公司、風場、機構等關鍵字、在各主題的聲量比重")
+hr()
+prettyRadioButtons(
+  "CLS", "關鍵字類別：", choices = unique(E$class),
+  selected = unique(E$class)[1], inline=T, icon=icon("check"), 
+  status="success", animation="jelly")
+
+prettyRadioButtons(
+  "TG", "主題類別：", choices = names(TGL),
+  selected = names(TGL)[2], inline=F, icon=icon("check"), 
+  status="success", animation="jelly")
+
+sliderInput("N", "關鍵字數量：", 1, 50, 20, 1)
+
+hr()
+h6("使用兩個泡泡分別代表某關鍵字在調查期間前、後半段的聲量(泡泡大小)和主題比重(位置)")
+switchInput("TWO", label="兩段式趨勢分析", value=FALSE, size = "mini")
+```
+ 
+Column
+-------------------------------------
+### 主題(縮減)空間 
+```{r}
+renderPlot({
+  # input = list(N=20, TG="Manufacturing", CLS="ORG", TWO=F)
+  CLS=input$CLS; TG=input$TG
+  N = min(input$N, sum(E$class==CLS))
+  # N=20; TG="Operations"; CLS="ORG"; TWO=F
+  if(!input$TWO) {
+    w = (t(XX$Docu[,E$class==CLS]) %*% mx)[1:N,TGL[[TG]]]
+    psize = 0.25*(E$freq[E$class==CLS][1:N])^(1/2)
+    col = factor(rep("Y2010~2019", N))
+    title=paste("Top",N,CLS,"in the space of",TG)
+    } else {
+    v0 = which(X$date < as.Date("2016-01-01"))
+    v1 = which(X$date >= as.Date("2016-01-01"))
+    w0 = t(XX$Docu[v0,E$class==CLS]) %*% mx[v0,]
+    w1 = t(XX$Docu[v1,E$class==CLS]) %*% mx[v1,]
+    rownames(w1) = paste0(rownames(w1),".1")
+    s0 = colSums(XX$Docu[v0,E$class==CLS])
+    s1 = colSums(XX$Docu[v1,E$class==CLS])
+    w = rbind(w0[1:N,TGL[[TG]]],w1[1:N,TGL[[TG]]])
+    psize = 0.3*c(s0[1:N],s1[1:N])^(1/2)
+    col = factor(rep(c("Y2010~15","Y2016~19"), each=N))
+    title=paste0(
+      paste("Top",N,CLS,"in the space of",TG),
+      " ; 2-Period: X(2010~15), X.1(2016~19)")
+    }
+    
+    PCA(w/rowSums(w),graph=F) %>% fviz_pca_biplot(
+      repel=T,col.var="seagreen", pointsize = psize, mean.point=F,
+      alpha.ind=0.5, fill.ind="lightgray", pointshape=21, col.ind=col,
+      legend.title = list(color="Period"), palette="ucscgb", labelsize=5,
+      title=title)
+    })
+
+```
+
