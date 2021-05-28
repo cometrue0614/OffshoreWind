@@ -1,0 +1,81 @@
+---
+title: "關鍵字互動字雲"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: default
+    css: JH.css
+    social: menu
+    source_code: embed 
+    logo: mirdc48.png
+    favicon: mirdc48.png
+runtime: shiny
+---
+
+```{r}
+pacman::p_load(shinyWidgets,shinythemes)
+pacman::p_load(wordcloud2,dplyr,stringr)
+load("data/C20.rdata")
+```
+
+
+Column {data-width=20%}
+-------------------------------------
+### 選項 
+```{r}
+chooseSliderSkin("Modern")
+
+prettyRadioButtons(
+  "Unit", "共同出現段落", choices = list("句"=1, "段"=2, "篇"=3),
+  selected = 1, inline=T, icon=icon("check"), 
+  status="success", animation="jelly")
+
+hr()
+pickerInput(inputId = "Z1", label = "關鍵字(KW1)",
+            choices = sort(E$name), selected = "Taiwan",
+            options = list(`live-search`=T, style="btn-success") )
+pickerInput(inputId = "Z2", label = "關鍵字(KW2)",
+            choices = sort(E$name), selected = "ROV/AUV",
+            options = list(`live-search`=T, style="btn-success") )
+pickerInput(inputId = "Z3", label = "關鍵字(KW3)",
+            choices = sort(E$name), selected = "training",
+            options = list(`live-search`=T, style="btn-success") )
+awesomeCheckboxGroup(
+   "ZI", "選擇關鍵字", 
+   choices = list("KW1"=1,"KW2"=2,"KW3"=3),
+   selected = 1, inline = TRUE, status="success")
+
+hr()
+sliderInput("M1",  "前端(高頻)遮罩",  0, 20, 1, 1)
+sliderInput("M2",  "末端(低頻)遮罩",  0, 20, 2, 1)
+
+prettyRadioButtons(
+  "Sqrt", "字頻開更號", choices = list("是"=1, "否"=0),
+  selected = 1, inline=T, icon=icon("check"), 
+  status="success", animation="jelly")
+
+
+A = reactive({
+  x = XX[[as.integer(input$Unit)]]
+  i = as.integer(input$ZI)
+  if(length(i) == 0) i = 1
+  z = c(input$Z1, input$Z2, input$Z3)[i]
+  a = t(x) %*% x[,E$name %in% z]
+  a = data.frame(word=rownames(a), freq=rowSums(a)) %>% 
+    filter(freq > input$M2) %>% 
+    arrange(desc(freq)) %>% 
+    slice((1+input$M1):nrow(a))
+  if(input$Sqrt == "1") a$freq = sqrt(a$freq)
+  a
+  })
+
+```
+
+Column {.tabset .tabset-fade data-width=80%}
+-------------------------------------
+### 文字雲 
+```{r}
+renderWordcloud2({
+  wordcloud2(A())
+})
+
+```
