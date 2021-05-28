@@ -1,0 +1,233 @@
+---
+title: "離岸風電：特定產業網絡"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    theme: default
+    css: JH.css
+    social: menu
+    source_code: embed 
+    logo: mirdc48.png
+    favicon: mirdc48.png
+runtime: shiny
+---
+
+```{r}
+pacman::p_load(shiny,shinyWidgets,shinythemes,flexdashboard)
+pacman::p_load(dplyr,igraph,visNetwork,reshape2,stringr,DT)
+load("data/C20.rdata")
+```
+
+詳細設定 {data-icon="fa-cogs"}
+=====================================================
+
+Row {data-height=70%}
+-----------------------------------------------------
+### {data-width=25%}
+```{r}
+ctag = c('','','')
+chooseSliderSkin("Modern")
+
+h6("
+以特定關鍵詞篩選文章之後，
+依公司在文章段落之中共同出現的頻率建立社會網絡，
+並以社群偵測的方式分群並標示顏色，
+藉以發現產業的結構。")
+
+pickerInput(
+   inputId = "Pat",
+   label = "關鍵詞(regex)",
+   choices = c(
+     "ROV|AUV",
+     "(C|c)orrosion|(S|s)acrificial",
+     "(S|s)ubsea (C|c)able(s)?",
+     "(C|c)able (L|l)ifetime (M|m)onitor(ing)?",
+     "(L|l)ifetime",
+     "(M|m)onitor(ing)?"
+     ),
+   options = list(`live-search`=T, style="btn-success"),
+   selected = "(S|s)ubsea (C|c)able(s)?"
+   )
+
+prettyRadioButtons(
+  "Unit", "段落", choices = list("句"=1, "篇"=2),
+  selected = 2, inline=T, icon=icon("check"), 
+  status="success", animation="jelly")
+
+prettyRadioButtons(
+  "Cor", "關係", 
+  choices = list("共同出現次數"=0, "相關係數"=1),
+  selected = 0, inline=T, icon=icon("check"), 
+  status="success", animation="jelly")
+
+sliderInput("Q1", "依出現頻率(%)篩選節點", 0, 1, 0, 0.01)
+sliderInput("Q2", "依關聯強度(%)篩選鏈結", 0, 1, 0, 0.01)
+
+prettyRadioButtons(
+  "Giant", "只顯示相連結點", 
+  choices = list("否"=0, "是"=1),
+  selected = 1, inline=T, icon=icon("check"), 
+  status="success", animation="jelly")
+
+SX = reactive({
+  VN = input$VN
+  if(is.null(VN)) return(NULL)
+  if(length(VN$nodes) > 0) {
+    k = VN$nodes[[1]] %>% as.integer
+    v = XX$Sent[,k]
+    v2 = XX$Docu[,k]
+    }
+  else if(length(VN$edges) > 0) {
+    k = strsplit(VN$edges[[1]],"-")[[1]] %>% as.integer
+    v = rowSums(XX$Sent[,k]) == 2
+    v2 = rowSums(XX$Docu[,k]) == 2
+    print(v2)
+  }
+  else return(NULL)
+  
+  df = S[v,] %>% setNames(c('nid','pid','sid','sentence'))
+  i = setdiff(which(v2), unique(df$nid))
+  print(i)
+  if(length(i) > 0) {
+    df = rbind(df, data.frame(
+      nid = i, pid = 1, sid=1, sentence=X$tx[i]
+    ))}
+  df = df %>% 
+    filter(nid %in% which(str_detect(X$tx, input$Pat))) %>% 
+    left_join(cbind(nid = 1:nrow(X), X)) %>%
+    arrange(desc(date)) %>% as.data.frame() %>% head(200)
+
+  list(df=df, k=k, v=v)
+  })
+
+```
+
+### {data-width=75%}
+```{r}
+vis_network = function() {
+  # input = list(Unit="2", Cor="0", Q1=0, Q2=0, Giant="1",
+  #              Pat="ROV|AUV")
+
+  if(input$Unit == "1") {
+    i = str_detect(S$tx, input$Pat)
+    x = XX$Sent[i,] } else {
+      i = str_detect(X$tx, input$Pat)
+      x = XX$Docu[i,] }
+  
+  xi = which(E$class == "ORG" & colSums(x) > 0)
+  x = x[,xi]
+  freq = colSums(x)   
+  i = which(freq >= quantile(freq, input$Q1))
+  x = x[i, i]
+  si = xi[i]
+
+  if(input$Cor=="0") 
+    x = t(x) %*% x else 
+      x = cor(x)
+  x[is.na(x)] = 0
+
+  tt = sprintf(
+    "%s: %s(%s,%s,%d)", E$name[si],E$tooltip[si], 
+    E$class[si], E$sub_class[si], freq[i]) 
+    # %>% str_replace(",NA,", ",")
+  nodes = data.frame(
+    id=si, title=tt, value=2*sqrt(freq[i]),  
+    stringsAsFactors=F)
+
+  colnames(x) = rownames(x) = si
+  x[lower.tri(x,T)] = 0
+  x = subset(melt(x), value > 0)
+  links = subset(x, value >= quantile(value, input$Q2))
+  names(links)[1:2] = c('from','to')
+  links$value = sqrt(links$value)
+  links$id = paste0(links$from, "-", links$to)
+
+  g = graph_from_data_frame(d=links, vertices=nodes, directed=F)
+  if(input$Giant == "1") g = decompose(g)[[1]]
+  V(g)$group = cluster_fast_greedy(g)$membership
+  GL = toVisNetworkData(g)
+  GL$nodes$name = GL$nodes$label = E$name[as.integer(GL$nodes$id)]
+
+  JS1 = "function(vis) {Shiny.onInputChange('VN', vis);}"
+  visNetwork(GL$nodes, GL$edges) %>%
+    visPhysics("forceAtlas2Based") %>%
+    visEdges(color=list(highlight='red', opacity=0.5)) %>%
+    visNodes(shape="square") %>%
+    visOptions(highlightNearest=T, selectedBy="name") %>% 
+    visEvents(selectNode=JS1, selectEdge=JS1, 
+              deselectNode=JS1, deselectEdge=JS1) 
+ }
+
+renderVisNetwork( vis_network() )
+```
+
+
+Row {data-height=30%}
+-----------------------------------------------------
+### {data-width=35%}
+```{r}
+renderDataTable({
+  id = str_subset(names(input),"^.*rows_selected")
+  i = 0
+  for(x in id) {
+    i = as.integer(input[[x]])
+    if(length(i)>0) if(i > 0) break
+    }    
+  if(length(i)>0) if(i > 0) {
+    df = SX()$df[i,]; k = SX()$k
+    df$z = paste0('',df$title,': ',df$tx)
+    for(j in 1:length(k)) df$z = str_replace_all(
+      df$z, regex(paste0('(',E$alias[k[j]],')'), E$ignore[k[j]]),
+      paste0(ctag[j], '\\1')
+      )
+    df$z = str_replace_all(
+      df$z, paste0('(',input$Pat,')'), paste0(ctag[3], '\\1')  )
+    datatable(
+      df[,'z',drop=F],escape=F,rownames=F,
+      colnames=c('The Selected Article'),
+      extensions=c('Scroller'),
+      options=list(scrollY="225px",scrollX=F,paging=F,
+                   searching=F,ordering=F,info=F)
+      ) %>% 
+      formatStyle(columns=0:2, fontSize = '90%')
+    }
+  })
+```
+
+### {data-width=65%}
+```{r}
+renderDataTable({
+  if(!is.null(SX())) {
+    k = SX()$k; df = SX()$df[,c('date','sentence')]
+    df$z = df$sentence
+    cname=sprintf('Recent Co-Occurance (%d): ',nrow(df))
+    for(i in 1:length(k)) {
+      if(i > 1) cname = paste0(cname, " and ")
+      cname = paste0(cname, ctag[i], E$name[k[i]], '')
+      df$z = str_replace_all(
+      df$z, regex(paste0('(',E$alias[k[i]],')'), E$ignore[k[i]]),
+      paste0(ctag[i], '\\1') )
+    }
+    
+    df$z = str_replace_all(
+      df$z, paste0('(',input$Pat,')'), paste0(ctag[3], '\\1') )
+
+    datatable(
+      df[,c('date','z')],escape=F,rownames=F,
+      colnames=c('Date', cname),
+      extensions=c('Scroller','Select'),
+      selection=list(mode='single', selected=c(1), target='row'), 
+      options=list(
+      scrollY="225px",scrollX=F,paging=F,searching=F,ordering=F,
+      select = list(style='single'),info=F 
+      )) %>% 
+      formatStyle(columns=0:2, fontSize = '90%') 
+    } })
+```
+
+
+社會網路圖 {data-icon="fa-share-alt"}
+=====================================================
+```{r}
+renderVisNetwork( vis_network() )
+```
