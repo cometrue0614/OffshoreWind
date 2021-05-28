@@ -1,0 +1,103 @@
+---
+title: "關鍵字詞聲量趨勢查詢"
+output: 
+  flexdashboard::flex_dashboard:
+    theme: default
+    css: JH.css
+    social: menu
+    source_code: embed 
+    logo: mirdc48.png
+    favicon: mirdc48.png
+runtime: shiny
+---
+
+```{r results='hide', message=FALSE, warning=FALSE}
+pacman::p_load(shinyWidgets,shinythemes)
+pacman::p_load(dplyr, stringr, reshape2, highcharter, RColorBrewer)
+load("data/C20.rdata")
+X$year = as.integer(format(X$date, "%Y"))
+pals16 = c(brewer.pal(12,"Set3"),brewer.pal(8,"Set1")[1:4])
+
+```
+
+Column {data-width=25%}
+-------------------------------------
+### 選項 
+```{r}
+chooseSliderSkin("Modern")
+
+prettyRadioButtons(
+   "CLS", "選擇類別", 
+   choices = unique(E$class),
+   selected = "ORG",
+   inline = TRUE, status="success")
+
+prettyRadioButtons(
+   "CO4", "包含4C-Offshore", 
+   choices = c("Y","N"),
+   selected = "N",
+   inline = TRUE, status="success")
+
+sliderInput("K", "選擇範圍",  1, 50,  c(1,10), 1)
+
+DF = reactive({
+  # input = list(CO4="N", CLS="ORG", K=c(1,6))
+  source = "News articles from Offshore-WIND"
+  A = as.data.frame.matrix(XX$Docu)
+  colnames(A) = E$name
+  if(input$CO4 == "Y") {
+    source = paste(source, "and 4C-Offshore")
+    X2 = X
+  } else {
+    A = A[X$source != "4CO",]
+    X2 = X[X$source != "4CO",]
+  }
+  
+  A = split(A, X2$year) %>% 
+    sapply(colSums) %>% melt(as.is=T) %>% 
+    setNames(c('name','year','n'))
+  
+  nx = E$name[E$class == input$CLS] %>% str_replace_all(" ","\\.")
+  k1 = input$K[1]; k2 = min(input$K[2],length(nx))
+  nx = nx[k1:k2] 
+  df = A %>% filter(name %in% nx & ! year %in% "2010") %>% 
+    mutate(name = factor(name, nx)) %>% 
+    group_by(year) %>% mutate(pc = n/sum(n)) %>% 
+    ungroup 
+  list(df=df, k1=k1, k2=k2, source=source)
+})
+
+
+```
+
+Column {data-width=75%}
+-------------------------------------
+### 每年文章篇數
+```{r}
+renderHighchart({
+  df = DF()$df; k1=DF()$k1; k2=DF()$k2
+  df %>% 
+    hchart("spline", hcaes(x=year, y=n, group=name)) %>% 
+    hc_add_theme(hc_theme_monokai()) %>% hc_colors(pals16) %>% 
+    hc_title(text=sprintf("No. Articles per %s, %d ~ %d", input$CLS, k1, k2)) %>% 
+    hc_subtitle(text=DF()$source) %>% 
+    hc_legend(align="right", verticalAlign="top", layout="vertical", y=50) %>% 
+    hc_plotOptions(spline=list(marker=list(enabled=FALSE)))
+  })
+```
+
+### 每年文章比重
+```{r}
+renderHighchart({
+  df = DF()$df; k1=DF()$k1; k2=DF()$k2
+  
+  df %>% 
+    hchart("spline", hcaes(x=year, y=pc, group=name)) %>% 
+    hc_add_theme(hc_theme_monokai()) %>% hc_colors(pals16) %>% 
+    hc_title(text=sprintf("Weight of Articles per %s, %d ~ %d", 
+                          input$CLS, k1, k2)) %>% 
+    hc_subtitle(text=DF()$source) %>% 
+    hc_legend(align="right", verticalAlign="top", layout="vertical", y=50) %>% 
+    hc_plotOptions(spline=list(marker=list(enabled=FALSE)))
+  })
+```
